@@ -36,6 +36,52 @@ In this exercise, you will:
 1. Learn different interaction options to develop with GitHub Copilot.
 1. Use Copilot to summarize and review your pull request.
 
+## Project Setup and Running Tests
+
+### Prerequisites
+- Python 3.x
+- Git
+
+### Installation
+1. Clone the repository:
+   ```
+   git clone https://github.com/your-username/skills-getting-started-with-github-copilot.git
+   cd skills-getting-started-with-github-copilot
+   ```
+
+2. Upgrade pip to the latest version:
+   ```
+   python -m pip install --upgrade pip
+   ```
+
+3. Install the dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Install Playwright browsers:
+   ```
+   playwright install
+   ```
+
+### Running the Application
+1. Start the FastAPI server:
+   ```
+   python src/app.py
+   ```
+
+2. The application will be available at http://localhost:8000
+
+### Running the Tests
+1. Make sure the server is running in a separate terminal.
+
+2. Run the tests:
+   ```
+   pytest src/test_app.py -v
+   ```
+
+3. All tests should pass, confirming the project is in a good state.
+
 ### How to start this exercise
 
 1. Right-click **Copy Exercise** and open the link in a new tab.
