@@ -104,7 +104,7 @@ jobs:
           scp -o StrictHostKeyChecking=no -r azureuser@${VM_IP}:~/app/reports/* reports/
           
       - name: Upload test reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: performance-test-reports
           path: reports/
