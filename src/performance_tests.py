@@ -15,6 +15,9 @@ import requests
 import json
 from concurrent.futures import ThreadPoolExecutor
 
+# Store throughput data as a module-level variable
+throughput_data = None
+
 # Base URL for the application
 BASE_URL = "http://localhost:8000"
 
@@ -125,6 +128,8 @@ def test_api_response_time():
 
 def test_throughput():
     """Test maximum throughput the system can handle"""
+    global throughput_data
+    
     # Number of requests to make
     num_requests = 100
     endpoint = f"{BASE_URL}/activities"
@@ -163,8 +168,8 @@ def test_throughput():
     # Assert on acceptable throughput
     assert successful_throughput >= SLA_PARAMETERS["min_throughput_threshold"], f"Throughput too low: {successful_throughput:.2f} requests/second"
     
-    # Return throughput data for reporting
-    return {
+    # Store throughput data for reporting instead of returning it
+    throughput_data = {
         "total_throughput": throughput,
         "successful_throughput": successful_throughput,
         "success_rate": successful_requests/num_requests
@@ -287,12 +292,8 @@ def generate_sla_report():
     
     report_path = report_dir / f"performance_report_{timestamp}.txt"
     
-    # Try to get throughput data (if available)
-    throughput_data = None
-    try:
-        throughput_data = test_throughput()
-    except Exception as e:
-        print(f"Failed to measure throughput: {str(e)}")
+    # Get throughput data from the module variable instead of calling the function
+    global throughput_data
     
     with open(report_path, "w") as f:
         f.write("========== PERFORMANCE TEST REPORT ==========\n")
