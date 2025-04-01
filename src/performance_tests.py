@@ -6,6 +6,10 @@ to measure response times and loading performance.
 import pytest
 import time
 import statistics
+import os
+import datetime
+import subprocess
+from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 import requests
 import json
@@ -23,7 +27,8 @@ SLA_PARAMETERS = {
     "concurrent_avg_threshold": 3.5,  # Maximum allowed average time for concurrent users
     "concurrent_max_threshold": 5.0,  # Maximum allowed max time for concurrent users
     "network_avg_threshold": 0.5,    # Maximum allowed average network request time
-    "network_max_threshold": 1.0     # Maximum allowed maximum network request time
+    "network_max_threshold": 1.0,    # Maximum allowed maximum network request time
+    "min_throughput_threshold": 50   # Minimum required throughput in requests per second
 }
 
 @pytest.fixture(scope="module")
@@ -42,6 +47,15 @@ def page(playwright_context):
     page = playwright_context.new_page()
     yield page
     page.close()
+
+def get_system_info():
+    """Get system information using neofetch"""
+    try:
+        result = subprocess.run(['neofetch'], 
+                              capture_output=True, text=True)
+        return result.stdout
+    except Exception as e:
+        return f"Failed to get system information: {str(e)}"
 
 def test_page_load_performance(page):
     """Test page load performance metrics"""
@@ -108,6 +122,53 @@ def test_api_response_time():
     assert avg_response_time < SLA_PARAMETERS["response_time_threshold"], f"Average response time too high: {avg_response_time:.2f}s"
     assert p95_response_time < SLA_PARAMETERS["response_time_threshold"] * 1.5, f"P95 response time too high: {p95_response_time:.2f}s"
     assert error_rate <= SLA_PARAMETERS["error_rate_threshold"], f"Error rate exceeds SLA: {error_rate:.2%}"
+
+def test_throughput():
+    """Test maximum throughput the system can handle"""
+    # Number of requests to make
+    num_requests = 100
+    endpoint = f"{BASE_URL}/activities"
+    
+    start_time = time.time()
+    
+    # Function to make a single request
+    def make_request(_):
+        try:
+            response = requests.get(endpoint)
+            return response.status_code == 200
+        except:
+            return False
+    
+    # Make requests in parallel with max concurrency
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(make_request, range(num_requests)))
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Calculate throughput metrics
+    successful_requests = results.count(True)
+    failed_requests = num_requests - successful_requests
+    
+    throughput = num_requests / elapsed_time
+    successful_throughput = successful_requests / elapsed_time
+    
+    print(f"\nThroughput test - Total requests: {num_requests}")
+    print(f"Throughput test - Time elapsed: {elapsed_time:.2f}s")
+    print(f"Throughput test - Total throughput: {throughput:.2f} requests/second")
+    print(f"Throughput test - Successful throughput: {successful_throughput:.2f} requests/second")
+    print(f"Throughput test - Success rate: {successful_requests/num_requests:.2%}")
+    print(f"SLA compliance: {'PASSED' if successful_throughput >= SLA_PARAMETERS['min_throughput_threshold'] else 'FAILED'}")
+    
+    # Assert on acceptable throughput
+    assert successful_throughput >= SLA_PARAMETERS["min_throughput_threshold"], f"Throughput too low: {successful_throughput:.2f} requests/second"
+    
+    # Return throughput data for reporting
+    return {
+        "total_throughput": throughput,
+        "successful_throughput": successful_throughput,
+        "success_rate": successful_requests/num_requests
+    }
 
 def test_concurrent_user_simulation():
     """Test performance under simulated concurrent users"""
@@ -220,14 +281,76 @@ def test_network_performance(page):
 
 def generate_sla_report():
     """Generate an SLA compliance report based on test results"""
-    print("\n========== SLA COMPLIANCE REPORT ==========")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_dir = Path("/workspaces/skills-getting-started-with-github-copilot/reports")
+    report_dir.mkdir(exist_ok=True)
+    
+    report_path = report_dir / f"performance_report_{timestamp}.txt"
+    
+    # Try to get throughput data (if available)
+    throughput_data = None
+    try:
+        throughput_data = test_throughput()
+    except Exception as e:
+        print(f"Failed to measure throughput: {str(e)}")
+    
+    with open(report_path, "w") as f:
+        f.write("========== PERFORMANCE TEST REPORT ==========\n")
+        f.write(f"Test Run: {timestamp}\n\n")
+        
+        # Add system information
+        f.write("========== SYSTEM INFORMATION ==========\n")
+        system_info = get_system_info()
+        f.write(system_info)
+        f.write("\n\n")
+        
+        # Add SLA information
+        f.write("========== SLA COMPLIANCE SUMMARY ==========\n")
+        f.write(f"SLA Target: 0.01% (99.99% availability/success rate)\n")
+        f.write(f"Maximum allowed error rate: {SLA_PARAMETERS['error_rate_threshold']:.2%}\n")
+        f.write(f"Maximum allowed response time: {SLA_PARAMETERS['response_time_threshold']}s\n")
+        f.write(f"Maximum allowed page load time: {SLA_PARAMETERS['page_load_threshold']}s\n")
+        f.write(f"Maximum allowed render time: {SLA_PARAMETERS['render_time_threshold']}s\n")
+        f.write(f"Minimum required throughput: {SLA_PARAMETERS['min_throughput_threshold']} requests/second\n")
+        
+        # Add throughput information if available
+        if throughput_data:
+            f.write("\n========== MAXIMUM THROUGHPUT ==========\n")
+            f.write(f"Total throughput: {throughput_data['total_throughput']:.2f} requests/second\n")
+            f.write(f"Successful throughput: {throughput_data['successful_throughput']:.2f} requests/second\n")
+            f.write(f"Success rate: {throughput_data['success_rate']:.2%}\n")
+        
+        f.write("==========================================\n")
+    
+    print(f"\n========== SLA COMPLIANCE REPORT ==========")
     print(f"SLA Target: 0.01% (99.99% availability/success rate)")
     print(f"Maximum allowed error rate: {SLA_PARAMETERS['error_rate_threshold']:.2%}")
     print(f"Maximum allowed response time: {SLA_PARAMETERS['response_time_threshold']}s")
     print(f"Maximum allowed page load time: {SLA_PARAMETERS['page_load_threshold']}s")
     print(f"Maximum allowed render time: {SLA_PARAMETERS['render_time_threshold']}s")
+    print(f"Minimum required throughput: {SLA_PARAMETERS['min_throughput_threshold']} requests/second")
+    print(f"Report saved to: {report_path}")
     print("==========================================")
+    
+    return report_path
 
 if __name__ == "__main__":
-    pytest.main(["-v", "performance_tests.py"])
-    generate_sla_report()
+    # Run tests and capture output
+    test_output = subprocess.run(
+        ["pytest", "-v", __file__], 
+        capture_output=True, 
+        text=True
+    )
+    
+    # Generate report
+    report_path = generate_sla_report()
+    
+    # Append test results to the report
+    with open(report_path, "a") as f:
+        f.write("\n\n========== TEST RESULTS ==========\n")
+        f.write(test_output.stdout)
+        if test_output.stderr:
+            f.write("\n\n========== ERRORS ==========\n")
+            f.write(test_output.stderr)
+    
+    print(f"\nTest results appended to report at: {report_path}")
