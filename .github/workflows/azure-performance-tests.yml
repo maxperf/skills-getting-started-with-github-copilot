@@ -1,0 +1,140 @@
+name: Azure Performance Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      vm_size:
+        description: 'Azure VM size'
+        default: 'Standard_D2s_v3'
+        required: false
+      location:
+        description: 'Azure region to deploy to'
+        default: 'eastus'
+        required: false
+
+jobs:
+  run-performance-tests:
+    name: Run Performance Tests on Azure
+    runs-on: ubuntu-latest
+    
+    env:
+      RESOURCE_GROUP_NAME: mergington-perf-test-${{ github.run_id }}
+      VM_NAME: mergington-test-vm
+      VM_SIZE: ${{ github.event.inputs.vm_size || 'Standard_D2s_v3' }}
+      LOCATION: ${{ github.event.inputs.location || 'eastus' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-html azure-cli
+          
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Create resource group
+        run: |
+          echo "Creating resource group $RESOURCE_GROUP_NAME in $LOCATION"
+          az group create --name $RESOURCE_GROUP_NAME --location $LOCATION
+      
+      - name: Deploy test VM
+        run: |
+          echo "Deploying test VM $VM_NAME with size $VM_SIZE"
+          az vm create \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --name $VM_NAME \
+            --image UbuntuLTS \
+            --size $VM_SIZE \
+            --admin-username azureuser \
+            --generate-ssh-keys \
+            --public-ip-sku Standard
+          
+          # Get VM's public IP address
+          VM_IP=$(az vm show --resource-group $RESOURCE_GROUP_NAME --name $VM_NAME --show-details --query publicIps -o tsv)
+          echo "VM_IP=$VM_IP" >> $GITHUB_ENV
+          
+      - name: Setup test environment on VM
+        run: |
+          # Copy project files to VM
+          scp -o StrictHostKeyChecking=no -r ./* azureuser@${VM_IP}:~/app
+          
+          # Install dependencies and setup environment
+          ssh -o StrictHostKeyChecking=no azureuser@${VM_IP} "
+            cd ~/app && 
+            sudo apt-get update && 
+            sudo apt-get install -y python3-pip neofetch chromium-browser &&
+            pip3 install -r requirements.txt &&
+            pip3 install playwright pytest-playwright pytest-html &&
+            python -m playwright install chromium
+          "
+      
+      - name: Start application service
+        run: |
+          # Start the application in background on VM
+          ssh -o StrictHostKeyChecking=no azureuser@${VM_IP} "
+            cd ~/app && 
+            nohup python3 src/app.py > app.log 2>&1 &
+            echo \$! > app.pid
+            sleep 5 # Give time for the app to start
+            curl http://localhost:8000/ || echo 'App not responding yet'
+            echo 'Application started'
+          "
+      
+      - name: Run performance tests
+        run: |
+          # Run performance tests on the VM
+          ssh -o StrictHostKeyChecking=no azureuser@${VM_IP} "
+            cd ~/app && 
+            python3 -m pytest src/performance_tests.py -v --html=reports/performance_report.html
+          "
+          
+          # Copy test results back
+          mkdir -p reports
+          scp -o StrictHostKeyChecking=no -r azureuser@${VM_IP}:~/app/reports/* reports/
+          
+      - name: Upload test reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-reports
+          path: reports/
+          
+      - name: Generate summary report
+        run: |
+          echo "## :chart_with_upwards_trend: Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "reports/performance_report.html" ]; then
+            echo "Performance report generated successfully. Download the artifact for detailed HTML report." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Extract key metrics from the report
+          if [ -f "reports/performance_report_*.txt" ]; then
+            echo "### Key Performance Metrics" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A 10 "MAXIMUM THROUGHPUT" reports/performance_report_*.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            
+            echo "### SLA Compliance" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A 6 "SLA COMPLIANCE SUMMARY" reports/performance_report_*.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No text report found. Check logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+      - name: Clean up Azure resources
+        if: always() # Run even if previous steps failed
+        run: |
+          echo "Cleaning up Azure resources in resource group $RESOURCE_GROUP_NAME"
+          az group delete --name $RESOURCE_GROUP_NAME --yes --no-wait
+          echo "Cleanup initiated. Resources will be deleted soon."
