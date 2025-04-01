@@ -1,0 +1,56 @@
+name: Local Performance Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-performance-tests:
+    name: Run Performance Tests Locally
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-html
+          pip install playwright
+          python -m playwright install chromium
+          
+      - name: Install neofetch for system metrics
+        run: |
+          apt-get update && apt-get install -y neofetch
+          
+      - name: Start application service
+        run: |
+          # Start the application in background
+          nohup python src/app.py > app.log 2>&1 &
+          echo $! > app.pid
+          sleep 5 # Give time for the app to start
+          
+      - name: Run performance tests
+        run: |
+          mkdir -p reports
+          python -m pytest src/performance_tests.py -v --html=reports/performance_report.html
+          
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-test-reports
+          path: reports/
+          
+      - name: Clean up
+        if: always() # Run even if previous steps failed
+        run: |
+          if [ -f "app.pid" ]; then
+            kill $(cat app.pid) || true
+            rm app.pid
+          fi
