@@ -2,3 +2,7 @@ fastapi
 uvicorn
 pytest
 playwright
+aiohttp
+pytest-asyncio
+statistics
+requests
