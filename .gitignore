@@ -40,3 +40,7 @@ Thumbs.db
 .actrc*
 
 __pycache__/
+
+# Report files #
+###############
+reports/
