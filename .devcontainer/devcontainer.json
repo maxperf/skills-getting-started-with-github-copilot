@@ -1,8 +1,16 @@
 {
-  "name": "Python 3",
+  "name": "Python 3 with Docker",
   "image": "mcr.microsoft.com/vscode/devcontainers/python:3.13",
   "forwardPorts": [8000],
-  "postCreateCommand": "pip install -r requirements.txt",
+  "runArgs": ["--init"],
+  "mounts": ["source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"],
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt && sudo chmod 666 /var/run/docker.sock",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -11,5 +19,6 @@
         "ms-python.debugpy"
       ]
     }
-  }
+  },
+  "remoteUser": "vscode"
 }

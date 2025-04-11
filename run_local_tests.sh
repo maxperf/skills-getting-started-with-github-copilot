@@ -26,7 +26,7 @@ pip3 install --upgrade pip
 pip3 install playwright
 
 echo "Installing Playwright system dependencies..."
-# The install-deps command will handle sudo permissions itself if needed
+# Run without sudo as it's not needed in this environment
 python3 -m playwright install-deps
 
 # Install browser

@@ -1,0 +1,84 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  performance-tests:
+    name: Run Performance Tests
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/vscode/devcontainers/python:3.13
+      options: --init
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Install neofetch for system metrics
+        run: |
+          apt-get update && apt-get install -y neofetch curl
+          
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+          pip3 install pytest-html
+          
+      - name: Setup Playwright
+        run: |
+          pip3 install playwright
+          python3 -m playwright install chromium
+          python3 -m playwright install-deps
+          
+      - name: Start application and run tests
+        run: |
+          # Create reports directory
+          mkdir -p reports
+          
+          # Start the application in background
+          echo "Starting the application..."
+          python3 src/app.py > app.log 2>&1 &
+          APP_PID=$!
+          echo $APP_PID > app.pid
+          echo "Application started with PID: $APP_PID"
+          
+          # Wait for app to start
+          echo "Waiting for application to start..."
+          sleep 5
+          
+          # Check if app is responding
+          if ! curl -s http://localhost:8000/activities > /dev/null; then
+            echo "Error: Application is not responding. Check app.log for details."
+            cat app.log
+            kill $APP_PID
+            exit 1
+          fi
+          echo "Application is running."
+          
+          # Run performance tests
+          echo -e "\nRunning performance tests..."
+          python3 -m pytest src/performance_tests.py -v --html=reports/performance_report.html
+          
+          # Run load tests
+          echo -e "\nRunning load tests..."
+          python3 src/load_test.py --optimize
+          
+          # Clean up
+          echo -e "\nCleaning up..."
+          kill $APP_PID || true
+          rm -f app.pid
+          
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-reports
+          path: |
+            reports/
+            app.log
+          retention-days: 14
