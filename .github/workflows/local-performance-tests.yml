@@ -25,10 +25,6 @@ jobs:
           pip install playwright
           python -m playwright install chromium
           
-      - name: Install neofetch for system metrics
-        run: |
-          apt-get update && apt-get install -y neofetch
-          
       - name: Start application service
         run: |
           # Start the application in background
