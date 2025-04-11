@@ -56,11 +56,17 @@ fi
 
 echo "Application is running."
 
-# Run performance tests
+# Run performance tests and capture output
 echo -e "\nRunning performance tests..."
-python -m pytest src/performance_tests.py -v --html=reports/performance_report.html
+python3 -m pytest src/performance_tests.py -v --html=reports/performance_report.html
+
+# The performance_tests.py now generates the metrics.json and summary HTML directly
 
 # Clean up
 echo -e "\nCleaning up..."
+kill $APP_PID 2>/dev/null || true
 rm -f app.pid
-echo -e "\nDone! Test report available at reports/performance_report.html"
+echo -e "\nDone! Test reports available at:"
+echo "- HTML Report: reports/performance_report.html"
+echo "- Performance Summary: reports/performance_summary.html" 
+echo "- Performance Metrics: reports/performance_metrics.json"
