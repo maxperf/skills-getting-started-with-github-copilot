@@ -22,8 +22,16 @@ pip install pytest-html
 
 # Install Playwright if needed and browser
 echo "Setting up Playwright..."
-pip install playwright
-python -m playwright install chromium
+pip3 install --upgrade pip
+pip3 install playwright
+
+echo "Installing Playwright system dependencies..."
+# The install-deps command will handle sudo permissions itself if needed
+python3 -m playwright install-deps
+
+# Install browser
+echo "Installing Playwright browsers..."
+python3 -m playwright install chromium
 
 # Create reports directory
 mkdir -p reports
@@ -54,7 +62,5 @@ python -m pytest src/performance_tests.py -v --html=reports/performance_report.h
 
 # Clean up
 echo -e "\nCleaning up..."
-kill $(cat app.pid)
-rm app.pid
-
+rm -f app.pid
 echo -e "\nDone! Test report available at reports/performance_report.html"
